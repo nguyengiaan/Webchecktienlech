@@ -1,0 +1,337 @@
+﻿@{
+    ViewData["Title"] = "Website check lệch tiền";
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>@ViewData["Title"]</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-center mb-4"> Kiểm tra lệch tiền nè</h1>
+
+        <div class="card shadow-sm p-4">
+            <div class="mb-3">
+                <label for="file1" class="form-label">Chọn ngày tháng</label>
+                <input type="date" id="datetime" name="datetime" class="form-control" />
+            </div>
+            <div class="mb-3">
+                <label for="file1" class="form-label">Chọn file Excel 1 (File cổng BHYT):</label>
+                <input type="file" id="file1" class="form-control" accept=".xlsx" />
+            </div>
+            <div class="mb-3">
+                <label for="file2" class="form-label">Chọn file Excel 2 (File cổng trên HIS):</label>
+                <input type="file" id="file2" class="form-control" accept=".xlsx" />
+            </div>
+            <button id="compareButton" class="btn btn-primary w-100">So sánh</button>
+        </div>
+
+        <div class="mt-5">
+            
+            <h2 class="text-center">Kết quả so sánh:</h2>
+            
+
+            <div class="table-responsive">
+                <table class="table table-bordered table-striped mt-3" id="resultTable">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Mã BN</th>
+                            <th>Tổng chi (BHYT)</th>
+                            <th>Tổng chi (HIS)</th>
+                            <th>Bệnh nhân CCT (BHYT)</th>
+                            <th>Bệnh nhân CCT (HIS)</th>
+                            <th>Bảo hiểm TT (BHYT)</th>
+                            <th>Bảo hiểm TT (HIS)</th>
+                            <th>Kết quả</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Kết quả sẽ được thêm vào đây -->
+                    </tbody>
+                      <tfoot class="table-dark">
+            <tr>
+                <th>Tổng</th>
+                <th id="totalBHYT"></th>
+                <th id="totalHIS"></th>
+                <th id="totalCCTBHYT"></th>
+                <th id="totalCCTHIS"></th>
+                <th id="totalTTBHYT"></th>
+                <th id="totalTTHIS"></th>
+                <th></th>
+            </tr>
+        </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+ 
+</body>
+</html>
+@section Scripts {
+   <script>
+        document.getElementById("compareButton").addEventListener("click", async () => {
+            try {
+                const file1 = document.getElementById("file1").files[0];
+                const file2 = document.getElementById("file2").files[0];
+
+                if (!file1 || !file2) {
+                    alert("Vui lòng chọn cả hai file Excel!");
+                    return;
+                }
+
+                const data1 = await readExcel(file1);
+                const data2 = await readExcel(file2);
+
+                if (!data1.length || !data2.length) {
+                    alert("Một trong hai file không có dữ liệu!");
+                    return;
+                }
+
+                const mismatchedRows = compareData(data1, data2);
+                displayResults(mismatchedRows);
+            } catch (error) {
+                console.error("Lỗi:", error);
+                alert("Có lỗi xảy ra khi so sánh file. Vui lòng kiểm tra lại định dạng file!");
+            }
+        });
+
+async function readExcel(file) {
+    try {
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { raw: true, defval: null });
+        
+        // Chuẩn hóa dữ liệu
+        return jsonData.map(row => ({
+            "Mã BN": row["Mã BN"] || row["MA_BN"] || "",
+            "Tổng chi": parseFloat(row["Tổng chi"] || row["T_TONGCHI"] || 0),
+            "Bệnh nhân CCT": (isNaN(parseFloat(row["Bệnh nhân CCT"])) ? 0 : parseFloat(row["Bệnh nhân CCT"])) + 
+                            (isNaN(parseFloat(row["T_BNTT"])) ? 0 : parseFloat(row["T_BNTT"])) + 
+                            (isNaN(parseFloat(row["Bệnh nhân TT"])) ? 0 : parseFloat(row["Bệnh nhân TT"])),
+            "Bảo hiểm TT": parseFloat(row["Bảo hiểm TT"]  || row["T_BHTT"] || 0),
+            "Ngày TT": typeof row["Ngày TT"] === "string" 
+                        ? row["Ngày TT"].split(" ")[0] 
+                        : typeof row["NGAY_TT"] === "string" 
+                            ? row["NGAY_TT"].split(" ")[0] 
+                            : "",
+            "Ngày vào": (row["Ngày vào"] || formatDateTime(row["NGAY_VAO"]) || ""),
+            "Ngày ra": (row["Ngày ra"] || formatDateTime(row["NGAY_RA"]) || ""),
+        }));
+    } catch (error) {
+        console.error("Lỗi đọc file:", error);
+        throw new Error("Không thể đọc file Excel. Vui lòng kiểm tra lại định dạng file!");
+    }
+}
+function formatDateTime(input) {
+    // Kiểm tra nếu input là dạng "202503240605"
+    if (/^\d{12}$/.test(input)) {
+        const year = input.substring(0, 4);
+        const month = input.substring(4, 6);
+        const day = input.substring(6, 8);
+        const hour = input.substring(8, 10);
+        const minute = input.substring(10, 12);
+        return `${day}/${month}/${year} ${hour}:${minute}`;
+    }
+
+    // Kiểm tra nếu input là dạng "01/03/2025 08:44"
+    if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/.test(input)) {
+        return input; // Đã đúng định dạng, trả về luôn
+    }
+
+    // Trường hợp không khớp định dạng
+    return "Invalid format";
+}
+
+       function compareData(data1, data2) {
+    const selectedDate = document.getElementById("datetime").value.split("-").reverse().join("/");
+    if (!selectedDate) {
+        alert("Vui lòng chọn ngày tháng!");
+        return [];
+    }
+
+    // Hàm helper để chuyển số thành định dạng VN hoặc hiển thị fallback
+    const formatNumber = (num, fallback = "0") => 
+        num !== undefined && num !== null ? num.toLocaleString('vi-VN') : fallback;
+
+    // Lọc và chuẩn bị dữ liệu
+    const filteredData1 = data1.filter(row => row["Ngày TT"] === selectedDate);
+    const data2Map = new Map(data2.map(row => [String(row["Mã BN"]), row]));
+    console.log("Filtered Data 1:", filteredData1);
+    console.log("Data 2 Map:", data2Map);
+    // Tính tổng các chỉ số
+    const calculateTotals = (data, prefix) => ({
+        total: data.reduce((sum, row) => sum + (row["Tổng chi"] || 0), 0),
+        totalCCT: data.reduce((sum, row) => sum + (row["Bệnh nhân CCT"] || 0), 0),
+        totalTT: data.reduce((sum, row) => sum + (row["Bảo hiểm TT"] || 0), 0),
+        prefix
+    });
+
+    const bhytTotals = calculateTotals(filteredData1, "BHYT");
+    const hisTotals = calculateTotals(data2, "HIS");
+
+    
+    
+
+    // So sánh từng bản ghi
+    const mismatchedRows = [];
+    const tolerance = 0;
+    const checkedBNs = new Set();
+
+    // Kiểm tra các BN từ data1 (BHYT)
+    filteredData1.forEach(row1 => {
+        const maBN = String(row1["Mã BN"]);
+        checkedBNs.add(maBN);
+        const row2 = data2Map.get(maBN);
+
+        if (!row2) {
+            mismatchedRows.push(createMismatchRow(row1, null, bhytTotals.prefix, hisTotals.prefix));
+            return;
+        }
+
+        // Kiểm tra ngày ra và ngày vào trước khi so sánh
+        if (row1["Ngày vào"] !== row2["Ngày vào"] || row1["Ngày ra"] !== row2["Ngày ra"]) {
+            mismatchedRows.push(createMismatchRow(row1, row2, bhytTotals.prefix, hisTotals.prefix));
+            return;
+        }
+
+        if (isMismatched(row1, row2, tolerance)) {
+            mismatchedRows.push(createMismatchRow(row1, row2, bhytTotals.prefix, hisTotals.prefix));
+        }
+    });
+
+    // Kiểm tra các BN từ data2 (HIS) chưa được xử lý
+    data2.forEach(row2 => {
+        const maBN = String(row2["Mã BN"]);
+        if (!checkedBNs.has(maBN)) {
+            mismatchedRows.push(createMismatchRow(null, row2, bhytTotals.prefix, hisTotals.prefix));
+        }
+    });
+
+    // Hiển thị tổng
+    updateTotals(bhytTotals, hisTotals);
+
+    return mismatchedRows;
+
+    // Helper functions
+  function isMismatched(row1, row2, tolerance)
+{
+    return Math.abs((row1["Tổng chi"] || 0) - (row2["Tổng chi"] || 0)) > tolerance ||
+           Math.abs((row1["Bệnh nhân CCT"] || 0) - (row2["Bệnh nhân CCT"] || 0)) > tolerance ||
+           Math.abs((row1["Bảo hiểm TT"] || 0) - (row2["Bảo hiểm TT"] || 0)) > tolerance 
+
+}
+
+    function createMismatchRow(row1, row2, prefix1, prefix2) {
+        const existsIn1 = row1 !== null;
+        const existsIn2 = row2 !== null;
+        
+        return {
+            "Mã BN": existsIn1 ? row1["Mã BN"] : row2["Mã BN"],
+            [`Tổng chi (${prefix1})`]: existsIn1 ? formatNumber(row1["Tổng chi"]) : "Không tồn tại",
+            [`Tổng chi (${prefix2})`]: existsIn2 ? formatNumber(row2["Tổng chi"]) : "Không tồn tại",
+            [`Bệnh nhân CCT (${prefix1})`]: existsIn1 ? formatNumber(row1["Bệnh nhân CCT"]) : "Không tồn tại",
+            [`Bệnh nhân CCT (${prefix2})`]: existsIn2 ? formatNumber(row2["Bệnh nhân CCT"]) : "Không tồn tại",
+            [`Bảo hiểm TT (${prefix1})`]: existsIn1 ? formatNumber(row1["Bảo hiểm TT"]) : "Không tồn tại",
+            [`Bảo hiểm TT (${prefix2})`]: existsIn2 ? formatNumber(row2["Bảo hiểm TT"]) : "Không tồn tại",
+            "Kết quả": !existsIn1 ? `Không tồn tại trong ${prefix1}` : 
+                        !existsIn2 ? `Không tồn tại trong ${prefix2}` : "Dữ liệu không khớp"
+        };
+    }
+
+    function updateTotals(totals1, totals2) {
+        document.getElementById("totalBHYT").textContent = formatNumber(totals1.total);
+        document.getElementById("totalHIS").textContent = formatNumber(totals2.total);
+        document.getElementById("totalCCTBHYT").textContent = formatNumber(totals1.totalCCT);
+        document.getElementById("totalCCTHIS").textContent = formatNumber(totals2.totalCCT);
+        document.getElementById("totalTTBHYT").textContent = formatNumber(totals1.totalTT);
+        document.getElementById("totalTTHIS").textContent = formatNumber(totals2.totalTT);
+    }
+}
+        function displayResults(mismatchedRows) {
+            const tableBody = document.getElementById("resultTable").querySelector("tbody");
+            tableBody.innerHTML = "";
+
+            if (mismatchedRows.length === 0) {
+                const row = document.createElement("tr");
+                const cell = document.createElement("td");
+                cell.colSpan = 8;
+                cell.textContent = "Không có sự khác biệt nào!";
+                cell.classList.add("text-center");
+                row.appendChild(cell);
+                tableBody.appendChild(row);
+                return;
+            }
+
+            mismatchedRows.forEach(row => {
+                const tableRow = document.createElement("tr");
+
+                Object.values(row).forEach(value => {
+                    const cell = document.createElement("td");
+                    cell.textContent = value;
+                    tableRow.appendChild(cell);
+                });
+
+                tableBody.appendChild(tableRow);
+            });
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+}
+@section Styles {
+    <style>
+    body {
+        background-color: #ffe4e1; /* Màu nền hồng nhạt */
+        font-family: Arial, sans-serif;
+    }
+
+    h1 {
+        color: #ff69b4; /* Màu hồng đậm */
+        font-weight: bold;
+    }
+
+    .card {
+        border: 2px solid #ff69b4; /* Viền màu hồng đậm */
+        border-radius: 10px;
+        background-color: #fff0f5; /* Nền thẻ màu hồng nhạt */
+    }
+
+    .btn-primary {
+        background-color: #ff69b4; /* Nút màu hồng đậm */
+        border-color: #ff69b4;
+    }
+
+    .btn-primary:hover {
+        background-color: #ff85c1; /* Màu hồng nhạt hơn khi hover */
+        border-color: #ff85c1;
+    }
+
+    .table {
+        border: 2px solid #ff69b4; /* Viền bảng màu hồng đậm */
+    }
+
+    .table thead {
+        background-color: #ff69b4; /* Nền tiêu đề bảng màu hồng đậm */
+        color: white; /* Chữ màu trắng */
+    }
+
+    .table tbody tr:nth-child(even) {
+        background-color: #fff0f5; /* Hàng chẵn màu hồng nhạt */
+    }
+
+    .table tbody tr:nth-child(odd) {
+        background-color: #ffe4e1; /* Hàng lẻ màu hồng nhạt hơn */
+    }
+
+    .text-center {
+        color: #ff69b4; /* Màu chữ trung tâm */
+    }
+</style>
+}
