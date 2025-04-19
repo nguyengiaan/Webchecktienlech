@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Website check lệch tiền</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            background-color: #ffe4e1;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #ff69b4;
+            font-weight: bold;
+        }
+        .card {
+            border: 2px solid #ff69b4;
+            border-radius: 10px;
+            background-color: #fff0f5;
+        }
+        .btn-primary {
+            background-color: #ff69b4;
+            border-color: #ff69b4;
+        }
+        .btn-primary:hover {
+            background-color: #ff85c1;
+            border-color: #ff85c1;
+        }
+        .table {
+            border: 2px solid #ff69b4;
+            width: 100%;
+        }
+        .table thead {
+            background-color: #ff69b4;
+            color: white;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        .table tbody tr:nth-child(even) {
+            background-color: #fff0f5;
+        }
+        .table tbody tr:nth-child(odd) {
+            background-color: #ffe4e1;
+        }
+        #loading {
+            display: none;
+            color: #007bff;
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+        .diff-positive {
+            color: #d32f2f;
+            font-weight: bold;
+        }
+        .diff-negative {
+            color: #388e3c;
+            font-weight: bold;
+        }
+        .table-container {
+            height: calc(100vh - 350px);
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .container {
+            max-width: 100% !important;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">Kiểm tra lệch tiền giữa 2 file</h1>
+
+        <div class="card shadow-sm p-4">
+            <div class="mb-3">
+                <label for="file1" class="form-label">File Excel 1 (BHYT):</label>
+                <input type="file" id="file1" class="form-control" accept=".xlsx, .xls">
+            </div>
+            <div class="mb-3">
+                <label for="file2" class="form-label">File Excel 2 (HIS):</label>
+                <input type="file" id="file2" class="form-control" accept=".xlsx, .xls">
+            </div>
+            <div class="d-flex gap-2">
+                <button id="compareButton" class="btn btn-primary flex-grow-1">So sánh</button>
+                <button id="exportButton" class="btn btn-success" style="display:none">Xuất Excel</button>
+            </div>
+        </div>
+
+        <div id="loading" class="text-center mt-3">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Đang xử lý...</span>
+            </div>
+            <p class="mt-2">Đang xử lý, vui lòng chờ...</p>
+            <div class="progress mt-2">
+                <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+            </div>
+            <p id="progressText" class="mt-1">0%</p>
+        </div>
+
+        <div class="mt-4">
+            <h4 class="text-center text-dark" id="slhoso"></h4>
+            <div class="table-container">
+                <table class="table table-bordered" id="resultTable">
+                    <thead>
+                        <tr>
+                            <th>Họ và tên</th>
+                            <th>Năm sinh</th>
+                            <th>Ngày vào</th>
+                            <th>Ngày ra</th>
+                            <th>Khám bệnh (BHYT)</th>
+                            <th>Khám bệnh (HIS)</th>
+                            <th>Ngày giường (BHYT)</th>
+                            <th>Ngày giường (HIS)</th>
+                            <th>Xét nghiệm (BHYT)</th>
+                            <th>Xét nghiệm (HIS)</th>
+                            <th>CĐHA,TDCN (BHYT)</th>
+                            <th>CĐHA,TDCN (HIS)</th>
+                            <th>TT, PT (BHYT)</th>
+                            <th>TT, PT (HIS)</th>
+                            <th>Máu (BHYT)</th>
+                            <th>Máu (HIS)</th>
+                            <th>Thuốc (BHYT)</th>
+                            <th>Thuốc (HIS)</th>
+                            <th>VTYT (BHYT)</th>
+                            <th>VTYT (HIS)</th>
+                            <th>Vận chuyển (BHYT)</th>
+                            <th>Vận chuyển (HIS)</th>
+                            <th>Tổng cộng (BHYT)</th>
+                            <th>Tổng cộng (HIS)</th>
+                            <th>Chênh lệch</th>
+                            <th>Kết quả</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Web Worker Code -->
+    <script id="workerScript" type="text/js-worker">
+        self.importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+        
+        self.addEventListener('message', async (e) => {
+            const { file1, file2 } = e.data;
+            
+            const readExcel = async (file) => {
+                try {
+                    const data = await file.arrayBuffer();
+                    const workbook = XLSX.read(data, { type: "array", dense: true });
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                    return XLSX.utils.sheet_to_json(sheet, { raw: true, defval: 0 });
+                } catch (error) {
+                    self.postMessage({ error: "Lỗi đọc file Excel: " + error.message });
+                    return null;
+                }
+            };
+
+            const processData = (data, source) => {
+                return data.filter(row => {
+                    const name = row['Họ và tên'];
+                    return name && name !== 'null' && name !== 'undefined' && name !== '';
+                }).map(row => ({
+                    key: `${row['Họ và tên']}|${row['Ngày vào']}|${row['Ngày ra']}|${row['Mã thẻ BHYT']||''}|${row['Năm sinh']||''}`,
+                    info: [
+                        row['Họ và tên'] || '',
+                        row['Năm sinh'] || '',
+                        row['Ngày vào'] || '',
+                        row['Ngày ra'] || ''
+                    ],
+                    values: [
+                        parseFloat(row['__EMPTY_2'] || 0),
+                        parseFloat(row['__EMPTY_3'] || 0),
+                        parseFloat(row['__EMPTY_4'] || 0),
+                        parseFloat(row['__EMPTY_5'] || 0),
+                        parseFloat(row['__EMPTY_6'] || 0),
+                        parseFloat(row['__EMPTY_7'] || 0),
+                        parseFloat(row['__EMPTY_8'] || 0),
+                        parseFloat(row['__EMPTY_9'] || 0),
+                        parseFloat(row['__EMPTY_10'] || 0)
+                    ],
+                    total: parseFloat(
+                        (row['__EMPTY_2'] || 0) + 
+                        (row['__EMPTY_3'] || 0) + 
+                        (row['__EMPTY_4'] || 0) + 
+                        (row['__EMPTY_5'] || 0) + 
+                        (row['__EMPTY_6'] || 0) + 
+                        (row['__EMPTY_7'] || 0) + 
+                        (row['__EMPTY_8'] || 0) + 
+                        (row['__EMPTY_9'] || 0) + 
+                        (row['__EMPTY_10'] || 0)
+                    ),
+                    source: source
+                }));
+            };
+
+            try {
+                const [data1, data2] = await Promise.all([readExcel(file1), readExcel(file2)]);
+                if (!data1 || !data2) return;
+
+                const startTime = performance.now();
+                const processed1 = processData(data1, 'BHYT');
+                const processed2 = processData(data2, 'HIS');
+                
+                const map2 = new Map();
+                processed2.forEach(item => map2.set(item.key, item));
+                
+                const results = [];
+                let processedCount = 0;
+                const totalCount = processed1.length + processed2.length;
+
+                // Compare BHYT with HIS
+                for (const item1 of processed1) {
+                    const item2 = map2.get(item1.key);
+                    
+                    if (!item2) {
+                        // Only in BHYT
+                        results.push({
+                            info: item1.info,
+                            values: item1.values.flatMap(v => [v, 0]),
+                            totals: [item1.total, 0],
+                            diff: item1.total,
+                            status: 'BHYT'
+                        });
+                    } else {
+                        // Compare values
+                        const diff = item1.total - item2.total;
+                        if (Math.abs(diff) > 0.01) {
+                            results.push({
+                                info: item1.info,
+                                values: item1.values.flatMap((v, i) => [v, item2.values[i]]),
+                                totals: [item1.total, item2.total],
+                                diff: diff,
+                                status: 'DIFF'
+                            });
+                        }
+                        map2.delete(item1.key);
+                    }
+                    
+                    // Update progress
+                    if (++processedCount % 100 === 0) {
+                        self.postMessage({ 
+                            progress: Math.floor((processedCount / totalCount) * 50) 
+                        });
+                    }
+                }
+
+                // Add remaining HIS items
+                for (const item2 of map2.values()) {
+                    results.push({
+                        info: item2.info,
+                        values: item2.values.flatMap(v => [0, v]),
+                        totals: [0, item2.total],
+                        diff: -item2.total,
+                        status: 'HIS'
+                    });
+                    
+                    // Update progress
+                    if (++processedCount % 100 === 0) {
+                        self.postMessage({ 
+                            progress: 50 + Math.floor((processedCount / totalCount) * 50) 
+                        });
+                    }
+                }
+
+                self.postMessage({
+                    results: results.filter(row => !row.values.some(val => isNaN(val))),
+                    stats: {
+                        count: results.length,
+                        time: performance.now() - startTime
+                    }
+                });
+
+            } catch (error) {
+                self.postMessage({ error: "Lỗi xử lý: " + error.message });
+            }
+        });
+    </script>
+
+    <!-- Main Application Script -->
+    <script>
+        let worker;
+        let currentRenderIndex = 0;
+        const BATCH_SIZE = 200;
+        let currentResults = null;
+
+        // Hàm định dạng số tiền Việt Nam
+        function formatCurrency(number) {
+            return new Intl.NumberFormat('vi-VN', {
+                style: 'currency',
+                currency: 'VND'
+            }).format(number);
+        }
+
+        document.getElementById("compareButton").addEventListener("click", async () => {
+            const file1 = document.getElementById("file1").files[0];
+            const file2 = document.getElementById("file2").files[0];
+
+            if (!file1 || !file2) {
+                alert("Vui lòng chọn cả hai file!");
+                return;
+            }
+
+            // Initialize UI
+            document.getElementById("loading").style.display = "block";
+            document.getElementById("progressBar").style.width = "0%";
+            document.getElementById("progressText").textContent = "0%";
+            document.querySelector("#resultTable tbody").innerHTML = "";
+            document.getElementById("exportButton").style.display = "none";
+
+            // Create worker if not exists
+            if (!worker) {
+                const blob = new Blob(
+                    [document.getElementById("workerScript").textContent],
+                    { type: "text/javascript" }
+                );
+                worker = new Worker(URL.createObjectURL(blob));
+
+                worker.onmessage = (e) => {
+                    if (e.data.error) {
+                        handleError(e.data.error);
+                        return;
+                    }
+                    
+                    if (e.data.progress !== undefined) {
+                        updateProgress(e.data.progress);
+                        return;
+                    }
+                    
+                    if (e.data.results) {
+                        currentResults = e.data.results;
+                        renderResults(e.data.results, e.data.stats);
+                        document.getElementById("exportButton").style.display = "block";
+                    }
+                };
+            }
+
+            // Start processing
+            worker.postMessage({ file1, file2 });
+        });
+
+        document.getElementById("exportButton").addEventListener("click", () => {
+            if (!currentResults) return;
+
+            const ws = XLSX.utils.aoa_to_sheet([
+                ['Họ và tên', 'Năm sinh', 'Ngày vào', 'Ngày ra', 
+                'Khám bệnh (BHYT)', 'Khám bệnh (HIS)',
+                'Ngày giường (BHYT)', 'Ngày giường (HIS)',
+                'Xét nghiệm (BHYT)', 'Xét nghiệm (HIS)',
+                'CĐHA,TDCN (BHYT)', 'CĐHA,TDCN (HIS)',
+                'TT, PT (BHYT)', 'TT, PT (HIS)',
+                'Máu (BHYT)', 'Máu (HIS)',
+                'Thuốc (BHYT)', 'Thuốc (HIS)',
+                'VTYT (BHYT)', 'VTYT (HIS)',
+                'Vận chuyển (BHYT)', 'Vận chuyển (HIS)',
+                'Tổng cộng (BHYT)', 'Tổng cộng (HIS)',
+                'Chênh lệch', 'Kết quả']
+            ]);
+
+            currentResults.forEach(row => {
+                XLSX.utils.sheet_add_aoa(ws, [[
+                    ...row.info,
+                    ...row.values,
+                    row.totals[0],
+                    row.totals[1],
+                    row.diff,
+                    row.status === 'DIFF' ? 'Chênh lệch' : 
+                    row.status === 'BHYT' ? 'Chỉ có trong BHYT' : 'Chỉ có trong HIS'
+                ]], {origin: -1});
+            });
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Kết quả so sánh");
+            
+            XLSX.writeFile(wb, "ket_qua_so_sanh.xlsx");
+        });
+
+        function updateProgress(percent) {
+            document.getElementById("progressBar").style.width = `${percent}%`;
+            document.getElementById("progressText").textContent = `${percent}%`;
+        }
+
+        function handleError(error) {
+            document.getElementById("loading").style.display = "none";
+            alert(error);
+            console.error(error);
+        }
+
+        function renderResults(results, stats) {
+            const tableBody = document.querySelector("#resultTable tbody");
+            const totalRows = results.length;
+            
+            document.getElementById("slhoso").textContent = 
+                `Tìm thấy ${totalRows} hồ sơ chênh lệch (Xử lý ${stats.time.toFixed(0)}ms)`;
+            
+            function renderBatch() {
+                const fragment = document.createDocumentFragment();
+                const end = Math.min(currentRenderIndex + BATCH_SIZE, totalRows);
+                
+                for (; currentRenderIndex < end; currentRenderIndex++) {
+                    const row = results[currentRenderIndex];
+                    const tr = document.createElement("tr");
+                    
+                    // Apply row style based on status
+                    if (row.status === 'DIFF') tr.style.backgroundColor = '#fffacd';
+                    else if (row.status === 'BHYT') tr.style.backgroundColor = '#ffebee';
+                    else if (row.status === 'HIS') tr.style.backgroundColor = '#e8f5e9';
+                    
+                    // Build row HTML
+                    let html = row.info.map(info => `<td>${info}</td>`).join('');
+                    
+                    // Add values (BHYT and HIS pairs) with currency formatting
+                    html += row.values.map(val => 
+                        `<td>${formatCurrency(val)}</td>`
+                    ).join('');
+                    
+                    // Add totals and difference with currency formatting
+                    html += `
+                        <td>${formatCurrency(row.totals[0])}</td>
+                        <td>${formatCurrency(row.totals[1])}</td>
+                        <td class="${row.diff > 0 ? 'diff-positive' : 'diff-negative'}">
+                            ${formatCurrency(row.diff)}
+                        </td>
+                        <td>${row.status === 'DIFF' ? 'Chênh lệch' : 
+                            row.status === 'BHYT' ? 'Chỉ có trong BHYT' : 'Chỉ có trong HIS'}</td>
+                    `;
+                    
+                    tr.innerHTML = html;
+                    fragment.appendChild(tr);
+                }
+                
+                tableBody.appendChild(fragment);
+                
+                // Continue rendering if there's more data
+                if (currentRenderIndex < totalRows) {
+                    updateProgress(95 + (currentRenderIndex / totalRows * 5));
+                    requestAnimationFrame(renderBatch);
+                } else {
+                    // Finalize
+                    document.getElementById("loading").style.display = "none";
+                    document.getElementById("progressBar").style.width = "100%";
+                    document.getElementById("progressText").textContent = "100%";
+                    currentRenderIndex = 0; // Reset for next run
+                }
+            }
+            
+            // Start rendering
+            renderBatch();
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

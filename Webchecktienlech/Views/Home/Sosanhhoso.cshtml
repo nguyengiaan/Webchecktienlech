@@ -38,14 +38,11 @@
                     <thead class="table-dark">
                         <tr>
                             <th>Mã BN</th>
-                            <th>Tổng chi (BHYT)</th>
-                            <th>Tổng chi (HIS)</th>
-                            <th>Bệnh nhân CCT (BHYT)</th>
-                            <th>Bệnh nhân CCT (HIS)</th>
-                            <th>Bảo hiểm TT (BHYT)</th>
-                            <th>Bảo hiểm TT (HIS)</th>
+                            <th>Họ tên</th>
+                            <th>Ngày ra</th>
+                            <th>Ngày vào</th>
+                            <th>Ngày thanh toán</th>
                             <th>Kết quả</th>
-                    
                         </tr>
                     </thead>
                     <tbody>
@@ -98,10 +95,11 @@
                 // Chuẩn hóa dữ liệu
                 return jsonData.map(row => ({
                     "Mã BN": row["Mã BN"] || row["MA_BN"] || "",
-                    "Tổng chi": parseFloat(row["Tổng chi"] || row["T_TONGCHI"] || 0),
-                    "Bệnh nhân CCT": parseFloat(row["Bệnh nhân CCT"] || row["T_BNTT"] || 0) + parseFloat(row["Bệnh nhân TT"]|| 0),
-                    "Bảo hiểm TT": parseFloat(row["Bảo hiểm TT"] || row["T_BHTT"] || 0),
+                    "Họ tên": row["Họ tên"] || row["HO_TEN"] || "",
+                  
                     "Ngày TT": (row["Ngày TT"] || row["NGAY_TT"] || "").split(" ")[0], // Chỉ lấy phần ngày
+                    "Ngày vào": (row["Ngày vào"] || formatDateTime(row["NGAY_VAO"]) || ""),
+                    "Ngày ra": (row["Ngày ra"] || formatDateTime(row["NGAY_RA"]) || ""),
                 }));
                 
             } catch (error) {
@@ -109,8 +107,29 @@
                 throw new Error("Không thể đọc file Excel. Vui lòng kiểm tra lại định dạng file!");
             }
         }
+        function formatDateTime(input) {
+    // Kiểm tra nếu input là dạng "202503240605"
+    if (/^\d{12}$/.test(input)) {
+        const year = input.substring(0, 4);
+        const month = input.substring(4, 6);
+        const day = input.substring(6, 8);
+        const hour = input.substring(8, 10);
+        const minute = input.substring(10, 12);
+        return `${day}/${month}/${year} ${hour}:${minute}`;
+    }
+
+    // Kiểm tra nếu input là dạng "01/03/2025 08:44"
+    if (/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/.test(input)) {
+        return input; // Đã đúng định dạng, trả về luôn
+    }
+
+    // Trường hợp không khớp định dạng
+    return "Invalid format";
+}
 
 function compareData(data1, data2) {
+ 
+
     const mismatchedRows = [];
     const selectedDate = document.getElementById("datetime").value.split("-").reverse().join("/");
 
@@ -123,16 +142,15 @@ function compareData(data1, data2) {
     console.log("filteredData1",filteredData1);
     console.log("data2",data2);
     filteredData1.forEach(row1 => {
-        const row2 = data2.find(r => String(r["Mã BN"]) === String(row1["Mã BN"]));
+        const row2 = data2.find(r => String(r["Mã BN"]) === String(row1["Mã BN"]) && String(r["Ngày vào"]) === String(row1["Ngày vào"]) && String(r["Ngày ra"]) === String(row1["Ngày ra"]));
         if (!row2) {
             mismatchedRows.push({
                 "Mã BN": row1["Mã BN"],
-                "Tổng chi (BHYT)": row1["Tổng chi"].toLocaleString('vi-VN'),
-                "Tổng chi (HIS)": "Không có",
-                "Bệnh nhân CCT (BHYT)": row1["Bệnh nhân CCT"].toLocaleString('vi-VN'),
-                "Bệnh nhân CCT (HIS)": "Không có",
-                "Bảo hiểm TT (BHYT)": row1["Bảo hiểm TT"].toLocaleString('vi-VN'),
-                "Bảo hiểm TT (HIS)": "Không có",
+                "Họ tên": row1["Họ tên"],
+         
+                "Ngày vào": row1["Ngày vào"],
+                "Ngày ra": row1["Ngày ra"],
+                       "Ngày TT": row1["Ngày TT"],
                 "Kết quả": "Chỉ có trong file BHYT"
             });
         }
@@ -143,12 +161,11 @@ function compareData(data1, data2) {
         if (!row1) {
             mismatchedRows.push({
                 "Mã BN": row2["Mã BN"],
-                "Tổng chi (BHYT)": "Không có",
-                "Tổng chi (HIS)": row2["Tổng chi"].toLocaleString('vi-VN'),
-                "Bệnh nhân CCT (BHYT)": "Không có",
-                "Bệnh nhân CCT (HIS)": row2["Bệnh nhân CCT"].toLocaleString('vi-VN'),
-                "Bảo hiểm TT (BHYT)": "Không có",
-                "Bảo hiểm TT (HIS)": row2["Bảo hiểm TT"].toLocaleString('vi-VN'),
+                "Họ tên": row2["Họ tên"],
+                "Ngày vào": row2["Ngày vào"],
+                "Ngày ra": row2["Ngày ra"],
+                
+               
                 "Kết quả": "Chỉ có trong file HIS"
             });
         }

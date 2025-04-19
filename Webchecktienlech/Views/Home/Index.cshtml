@@ -164,8 +164,6 @@ function formatDateTime(input) {
     // Lọc và chuẩn bị dữ liệu
     const filteredData1 = data1.filter(row => row["Ngày TT"] === selectedDate);
     const data2Map = new Map(data2.map(row => [String(row["Mã BN"]), row]));
-    console.log("Filtered Data 1:", filteredData1);
-    console.log("Data 2 Map:", data2Map);
     // Tính tổng các chỉ số
     const calculateTotals = (data, prefix) => ({
         total: data.reduce((sum, row) => sum + (row["Tổng chi"] || 0), 0),

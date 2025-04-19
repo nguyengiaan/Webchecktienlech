@@ -22,6 +22,11 @@ namespace Webchecktienlech.Controllers
         {
             return View();
         }
+        [Route("/So-sanh-tien")]
+        public IActionResult Sosanhtien()
+        {
+            return View();
+        }
         public IActionResult Privacy()
         {
             return View();

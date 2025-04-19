@@ -4,8 +4,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllersWithViews();
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.Listen(System.Net.IPAddress.Any, 5089); // Lắng nghe trên cổng 5000
+    serverOptions.Listen(System.Net.IPAddress.Any, 9999); // Lắng nghe trên cổng 5000
 });
+
 
 var app = builder.Build();
 
